@@ -1,104 +1,59 @@
-\# Relay
-
-
-
-Relay is a globally scalable intelligent URL routing and reliability platform.
-
-
-
-\## Architecture
-
-
-
-Client
-
-&#x20;  ↓
-
-Relay Router
-
-&#x20;  ↓
-
-Backend Services
-
-&#x20;  ↓
-
-Health Monitoring
-
-
-
-\## Tech Stack
-
-
-
-\- FastAPI
-
-\- PostgreSQL
-
-\- Redis
-
-\- React
-
-\- Prometheus
-
-\- Grafana
-
-\- Docker
-
-\- Pytest
-
-\- Locust
-
-
-
-\## Day 1
-
-
-
-\- FastAPI foundation
-
-\- PostgreSQL
-
-\- Redis
-
-\- Docker Compose
-
-\- Initial database schema
-
-\- Health endpoint
-
-\- Prometheus
-
-\- Grafana
-
-
-
-\## Run
-
-
-
-```bash
-
-docker compose up --build
-
-```
-
-
-
-\## Services
-
-
-
-Backend: http://localhost:8000
-
-
-
-Swagger: http://localhost:8000/docs
-
-
-
-Prometheus: http://localhost:9090
-
-
-
-Grafana: http://localhost:3000
-
+# Relay
+
+> A globally scalable intelligent URL routing and reliability platform designed to route traffic across backend services based on health, performance, and routing policies.
+
+Relay is an infrastructure-focused platform that goes beyond traditional URL shortening by combining **URL routing, backend health monitoring, intelligent traffic distribution, caching, reliability mechanisms, and observability**.
+
+The goal is to build a production-oriented routing system capable of making intelligent decisions about where incoming requests should be sent.
+
+---
+
+## 🚀 Overview
+
+Traditional URL shorteners primarily map a short URL to a destination.
+
+Relay focuses on the infrastructure behind the request.
+
+When a request reaches Relay, the platform can evaluate:
+
+- Backend health
+- Routing rules
+- Service availability
+- Request distribution
+- Cached routing information
+- Backend failures
+- Traffic policies
+- Performance metrics
+
+and determine the most appropriate backend destination.
+
+### Core Flow
+
+```text
+                        ┌──────────────────┐
+                        │      Client      │
+                        └────────┬─────────┘
+                                 │
+                                 ▼
+                        ┌──────────────────┐
+                        │  Relay Router    │
+                        └────────┬─────────┘
+                                 │
+                 ┌───────────────┼───────────────┐
+                 │               │               │
+                 ▼               ▼               ▼
+          Routing Rules      Redis Cache    Health Checks
+                 │               │               │
+                 └───────────────┼───────────────┘
+                                 │
+                                 ▼
+                        ┌──────────────────┐
+                        │ Backend Services │
+                        └────────┬─────────┘
+                                 │
+                                 ▼
+                        ┌──────────────────┐
+                        │  Observability   │
+                        │ Prometheus +     │
+                        │ Grafana          │
+                        └──────────────────┘
