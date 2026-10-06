@@ -6,7 +6,10 @@ async def check_backend_health(
     timeout: float = 2.0,
 ) -> bool:
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            trust_env=False,
+        ) as client:
             response = await client.get(
                 url.rstrip("/") + "/health"
             )

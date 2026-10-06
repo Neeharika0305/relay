@@ -10,6 +10,7 @@ from app.models import Route
 from app.models import RoutingRule
 from app.router.rules import Backend as RoutingBackend
 from app.router.routing_engine import RoutingEngine
+from reliability.circuit_breaker import CircuitBreaker
 
 
 router = APIRouter(
@@ -19,10 +20,28 @@ router = APIRouter(
 
 REQUEST_TIMEOUT = 5.0
 
+CIRCUIT_FAILURE_THRESHOLD = 3
+CIRCUIT_RECOVERY_TIMEOUT = 10.0
+
 routing_engine = RoutingEngine()
 
 runtime_active_connections: dict[int, int] = {}
 runtime_latency_ms: dict[int, float] = {}
+
+circuit_breakers: dict[int, CircuitBreaker] = {}
+
+
+def get_circuit_breaker(backend_id: int) -> CircuitBreaker:
+    breaker = circuit_breakers.get(backend_id)
+
+    if breaker is None:
+        breaker = CircuitBreaker(
+            failure_threshold=CIRCUIT_FAILURE_THRESHOLD,
+            recovery_timeout=CIRCUIT_RECOVERY_TIMEOUT,
+        )
+        circuit_breakers[backend_id] = breaker
+
+    return breaker
 
 
 def get_strategy(route: Route, db: Session) -> str:
@@ -88,6 +107,25 @@ async def proxy_request(
             detail="No enabled backends available",
         )
 
+    available_backends = []
+
+    for backend in backends:
+        breaker = get_circuit_breaker(backend.id)
+
+        if breaker.allow_request():
+            available_backends.append(backend)
+        else:
+            print(
+                f"[Relay Circuit] OPEN: "
+                f"backend={backend.url}"
+            )
+
+    if not available_backends:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="All backend circuits are open",
+        )
+
     strategy = get_strategy(
         route_record,
         db,
@@ -107,9 +145,9 @@ async def proxy_request(
                 backend.id,
                 0.0,
             ),
-            healthy=backend.enabled,
+            healthy=True,
         )
-        for backend in backends
+        for backend in available_backends
     ]
 
     try:
@@ -126,8 +164,12 @@ async def proxy_request(
 
     selected_backend = next(
         backend
-        for backend in backends
+        for backend in available_backends
         if str(backend.id) == selected.id
+    )
+
+    selected_breaker = get_circuit_breaker(
+        selected_backend.id
     )
 
     runtime_active_connections[selected_backend.id] = (
@@ -163,11 +205,26 @@ async def proxy_request(
             time.perf_counter() - start_time
         ) * 1000
 
+        if upstream_response.status_code >= 500:
+            selected_breaker.record_failure()
+
+            print(
+                f"[Relay Circuit] FAILURE: "
+                f"backend={selected_backend.url} "
+                f"status={upstream_response.status_code} "
+                f"failures={selected_breaker.failure_count} "
+                f"state={selected_breaker.state.value}"
+            )
+
+        else:
+            selected_breaker.record_success()
+
         print(
             f"[Relay] route={route_record.name} "
             f"strategy={strategy} "
             f"backend={selected_backend.url} "
-            f"latency={elapsed_ms:.2f}ms"
+            f"latency={elapsed_ms:.2f}ms "
+            f"circuit={selected_breaker.state.value}"
         )
 
         excluded_headers = {
@@ -192,12 +249,30 @@ async def proxy_request(
         )
 
     except httpx.TimeoutException:
+        selected_breaker.record_failure()
+
+        print(
+            f"[Relay Circuit] TIMEOUT: "
+            f"backend={selected_backend.url} "
+            f"failures={selected_breaker.failure_count} "
+            f"state={selected_breaker.state.value}"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Backend request timed out",
         )
 
     except httpx.RequestError as exc:
+        selected_breaker.record_failure()
+
+        print(
+            f"[Relay Circuit] REQUEST FAILURE: "
+            f"backend={selected_backend.url} "
+            f"failures={selected_breaker.failure_count} "
+            f"state={selected_breaker.state.value}"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Backend request failed: {str(exc)}",
