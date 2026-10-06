@@ -2,12 +2,14 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: ./backend/Dockerfile
     container_name: relay_backend
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://relay:relay_password@postgres:5432/relay
+      PYTHONPATH: /app/backend:/app
+      DATABASE_URL: postgresql+psycopg2://relay:relay_password@postgres:5432/relay
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:

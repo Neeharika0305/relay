@@ -5,5 +5,6 @@ from app.config import settings
 
 redis_client = redis.from_url(
     settings.REDIS_URL,
-    decode_responses=True
+    decode_responses=True,
+    protocol=2,
 )
